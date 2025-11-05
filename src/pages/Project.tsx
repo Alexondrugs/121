@@ -9,6 +9,7 @@ import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-ki
 import { subscribeTable } from '../api/realtime'
 import { Tabs } from '../components/ui/tabs'
 import { listMessages, sendMessage } from '../api/chat'
+import { listEstimates, createEstimate, deleteEstimate, listEstimateItems, upsertEstimateItem, exportEstimate } from '../api/estimates'
 import { TaskModal } from '../components/task/TaskModal'
 
 function ColumnView({ column, tasks }: { column: Column, tasks: Task[] }) {
@@ -180,6 +181,13 @@ export default function ProjectPage() {
                 </div>
               </div>
             )
+          },
+          {
+            value: 'estimates',
+            label: 'Сметы',
+            content: (
+              <EstimatesTab projectId={projectId} />
+            )
           }
         ]}
       />
@@ -187,6 +195,96 @@ export default function ProjectPage() {
       {activeTask && (
         <TaskModal open={!!activeTask} onOpenChange={(o)=>{ if (!o) setActiveTask(null) }} taskId={activeTask.id} title={activeTask.title} />
       )}
+    </div>
+  )
+}
+
+function EstimatesTab({ projectId }: { projectId: string }) {
+  const [items, setItems] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [title, setTitle] = useState('')
+  const [selected, setSelected] = useState<string | null>(null)
+  const [rows, setRows] = useState<any[]>([])
+
+  useEffect(()=>{
+    listEstimates(projectId).then(setItems).finally(()=>setLoading(false))
+  }, [projectId])
+
+  useEffect(()=>{
+    if (!selected) { setRows([]); return }
+    listEstimateItems(selected).then(setRows)
+  }, [selected])
+
+  const total = rows.reduce((s, r)=> s + Number(r.qty||0) * Number(r.price||0), 0)
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="space-y-2">
+        <div className="font-medium">Сметы</div>
+        {loading ? <div>Загрузка...</div> : (
+          <ul className="divide-y">
+            {items.map((it)=> (
+              <li key={it.id} className={`py-2 flex items-center justify-between ${selected===it.id?'font-medium':''}`}>
+                <button className="text-left" onClick={()=>setSelected(it.id)}>{it.title}</button>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="secondary" onClick={async ()=>{
+                    const res = await exportEstimate(it.id)
+                    if (res?.url) location.href = res.url; else alert('Экспорт выполнен (демо).')
+                  }}>Экспорт PDF</Button>
+                  <Button size="sm" variant="ghost" onClick={async ()=>{ await deleteEstimate(it.id); setItems(items.filter(x=>x.id!==it.id)); if (selected===it.id) setSelected(null) }}>Удалить</Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="flex gap-2 pt-2">
+          <input className="flex-1 h-9 rounded border px-2" placeholder="Название сметы" value={title} onChange={(e)=>setTitle(e.target.value)} />
+          <Button onClick={async ()=>{
+            if (!title.trim()) return
+            const e = await createEstimate(projectId, title.trim())
+            setItems([...items, e]); setTitle('')
+          }}>Добавить</Button>
+        </div>
+      </div>
+      <div className="space-y-2">
+        <div className="font-medium">Позиции</div>
+        {!selected ? (
+          <div className="text-sm text-muted-foreground">Выберите смету слева</div>
+        ) : (
+          <div className="space-y-2">
+            <table className="w-full text-sm border rounded">
+              <thead>
+                <tr className="bg-card">
+                  <th className="text-left p-2">Название</th>
+                  <th className="text-left p-2">Кол-во</th>
+                  <th className="text-left p-2">Цена</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, idx)=> (
+                  <tr key={r.id} className="border-t">
+                    <td className="p-2"><input className="w-full h-8 rounded border px-2" value={r.title} onChange={(e)=>{
+                      const v=e.target.value; setRows(rows.map((x,i)=>i===idx?{...x,title:v}:x))
+                    }} onBlur={async (e)=>{ await upsertEstimateItem(selected, { id: r.id, title: e.target.value, qty: r.qty, price: r.price, position: idx+1 }) }} /></td>
+                    <td className="p-2"><input className="w-24 h-8 rounded border px-2" type="number" value={r.qty} onChange={(e)=>{
+                      const v=Number(e.target.value); setRows(rows.map((x,i)=>i===idx?{...x,qty:v}:x))
+                    }} onBlur={async (e)=>{ await upsertEstimateItem(selected, { id: r.id, title: r.title, qty: Number(e.target.value), price: r.price, position: idx+1 }) }} /></td>
+                    <td className="p-2"><input className="w-28 h-8 rounded border px-2" type="number" value={r.price} onChange={(e)=>{
+                      const v=Number(e.target.value); setRows(rows.map((x,i)=>i===idx?{...x,price:v}:x))
+                    }} onBlur={async (e)=>{ await upsertEstimateItem(selected, { id: r.id, title: r.title, qty: r.qty, price: Number(e.target.value), position: idx+1 }) }} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <Button onClick={async ()=>{
+              const pos = rows.length + 1
+              const created = await upsertEstimateItem(selected!, { title: 'Новая позиция', qty: 1, price: 0, position: pos })
+              setRows([...rows, created])
+            }}>Добавить позицию</Button>
+            <div className="text-sm text-muted-foreground">Итого: {total.toFixed(2)}</div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

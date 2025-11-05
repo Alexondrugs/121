@@ -3,23 +3,64 @@ import { Dialog, DialogFooter, DialogHeader } from '../ui/dialog'
 import { Button } from '../ui/button'
 import { Textarea } from '../ui/textarea'
 import { addComment, listChecklist, listComments, toggleChecklist, upsertChecklist, uploadAttachment } from '../../api/task'
+import { supabase } from '../../lib/supabase'
+import { subscribeTable } from '../../api/realtime'
 
 export function TaskModal({ open, onOpenChange, taskId, title }: { open: boolean, onOpenChange: (o:boolean)=>void, taskId: string, title: string }) {
   const [comments, setComments] = useState<any[]>([])
   const [checklist, setChecklist] = useState<any[]>([])
   const [commentText, setCommentText] = useState('')
   const [newItem, setNewItem] = useState('')
+  const [assignees, setAssignees] = useState<any[]>([])
+  const [assigneeInput, setAssigneeInput] = useState('')
 
   useEffect(() => {
     if (!open) return
     listComments(taskId).then(setComments)
     listChecklist(taskId).then(setChecklist)
+    supabase.from('task_assignees').select('task_id,user_id').eq('task_id', taskId).then((res: { data: any[] | null })=> setAssignees(res.data||[]))
+    const unsubComments = subscribeTable('comments', `task_id=eq.${taskId}`, async ()=>{
+      const list = await listComments(taskId)
+      setComments(list)
+    })
+    const unsubChecklist = subscribeTable('task_checklist_items', `task_id=eq.${taskId}`, async ()=>{
+      const list = await listChecklist(taskId)
+      setChecklist(list)
+    })
+    const unsubAssignees = subscribeTable('task_assignees', `task_id=eq.${taskId}`, async ()=>{
+      const { data } = await supabase.from('task_assignees').select('task_id,user_id').eq('task_id', taskId)
+      setAssignees(data||[])
+    })
+    return () => { unsubComments(); unsubChecklist(); unsubAssignees() }
   }, [open, taskId])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogHeader>{title}</DialogHeader>
       <div className="space-y-4">
+        <div>
+          <div className="font-medium mb-1">Исполнители</div>
+          <ul className="flex flex-wrap gap-2">
+            {assignees.map((a)=> (
+              <li key={a.user_id} className="px-2 py-1 rounded border text-sm flex items-center gap-2">
+                <span>{a.user_id}</span>
+                <button className="text-red-600" onClick={async ()=>{
+                  await supabase.from('task_assignees').delete().eq('task_id', taskId).eq('user_id', a.user_id)
+                  setAssignees(assignees.filter(x=>x.user_id!==a.user_id))
+                }}>×</button>
+              </li>
+            ))}
+          </ul>
+          <div className="flex gap-2 mt-2">
+            <input className="flex-1 h-8 rounded border px-2" placeholder="UUID пользователя" value={assigneeInput} onChange={(e)=>setAssigneeInput(e.target.value)} />
+            <Button size="sm" onClick={async ()=>{
+              const uid = assigneeInput.trim()
+              if (!uid) return
+              await supabase.from('task_assignees').insert({ task_id: taskId, user_id: uid })
+              setAssigneeInput('')
+            }}>Назначить</Button>
+          </div>
+        </div>
         <div>
           <div className="font-medium mb-1">Чек‑лист</div>
           <ul className="space-y-1">
