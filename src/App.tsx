@@ -10,7 +10,7 @@ import { AppShell } from './components/layout/AppShell'
 function Protected({ children }: { children: JSX.Element }) {
   const { session, loading } = useAuth()
   if (loading) return <div className="p-6">Загрузка...</div>
-  if (!session) return <Navigate to="/login" replace />
+  if (!session) return <Navigate to={`${import.meta.env.BASE_URL}login`} replace />
   return children
 }
 

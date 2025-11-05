@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Session, User } from '@supabase/supabase-js'
+import { Session, User, AuthChangeEvent } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 
 export function useAuth() {
@@ -7,13 +7,13 @@ export function useAuth() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
+    supabase.auth.getSession().then((res: { data: { session: Session | null } }) => {
+      setSession(res.data.session)
       setLoading(false)
     })
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((_: AuthChangeEvent, newSession: Session | null) => {
       setSession(newSession)
-    })
+    }) as unknown as { data: { subscription: { unsubscribe: () => void } } }
     return () => sub.subscription.unsubscribe()
   }, [])
 
