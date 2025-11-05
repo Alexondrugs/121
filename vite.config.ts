@@ -6,7 +6,8 @@ export default defineConfig({
   server: {
     port: 5173
   },
-  envPrefix: 'VITE_'
+  envPrefix: 'VITE_',
+  base: process.env.GITHUB_ACTIONS ? '/121/' : '/'
 })
 
 
