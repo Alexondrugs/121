@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined) ?? 'https://ryvgroguxhvyehcejycl.supabase.co'
-const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) ?? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5dmdyb2d1eGh2eWVoY2VqeWNsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA5MDQzMDEsImV4cCI6MjA3NjQ4MDMwMX0.eWoiFdwM8YSv_MdxvXWkSpCFZlykarelZCJvub_EZVw'
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 
 function createStub() {
   // Minimal stub to avoid crashes on Pages when env is not configured
