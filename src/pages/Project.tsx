@@ -6,6 +6,10 @@ import type { Column, Task } from '../types'
 import { Button } from '../components/ui/button'
 import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { subscribeTable } from '../api/realtime'
+import { Tabs } from '../components/ui/tabs'
+import { listMessages, sendMessage } from '../api/chat'
+import { TaskModal } from '../components/task/TaskModal'
 
 function ColumnView({ column, tasks }: { column: Column, tasks: Task[] }) {
   const [title, setTitle] = useState(column.title)
@@ -22,7 +26,7 @@ function ColumnView({ column, tasks }: { column: Column, tasks: Task[] }) {
       <SortableContext items={tasks.map(t=>t.id)} strategy={verticalListSortingStrategy}>
         <div className="space-y-2 min-h-[20px]">
           {tasks.map(t => (
-            <div key={t.id} id={t.id} className="rounded-md border bg-background p-2 text-sm cursor-grab">
+            <div key={t.id} id={t.id} className="rounded-md border bg-background p-2 text-sm cursor-grab" onClick={()=> (window as any).openTask?.(t)}>
               {t.title}
             </div>
           ))}
@@ -54,6 +58,15 @@ export default function ProjectPage() {
       setColumns(cols)
       setTasks(ts)
     }).finally(() => setLoading(false))
+    const unsubCols = subscribeTable('columns', `project_id=eq.${projectId}`, async ()=>{
+      const cols = await getColumns(projectId)
+      setColumns(cols)
+    })
+    const unsubTasks = subscribeTable('tasks', `project_id=eq.${projectId}`, async ()=>{
+      const ts = await getTasks(projectId)
+      setTasks(ts)
+    })
+    return () => { unsubCols(); unsubTasks() }
   }, [projectId, setColumns, setTasks])
 
   const tasksByColumn = useMemo(() => {
@@ -105,23 +118,75 @@ export default function ProjectPage() {
 
   if (loading) return <div>Загрузка...</div>
 
+  const [activeTask, setActiveTask] = useState<Task | null>(null)
+  ;(window as any).openTask = (t: Task) => setActiveTask(t)
+
+  const [chat, setChat] = useState<any[]>([])
+  const [chatText, setChatText] = useState('')
+  useEffect(()=>{
+    if (!projectId) return
+    listMessages(projectId).then(setChat)
+    const unsub = subscribeTable('project_messages', `project_id=eq.${projectId}`, async ()=>{
+      const msgs = await listMessages(projectId)
+      setChat(msgs)
+    })
+    return () => unsub()
+  }, [projectId])
+
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="text-2xl font-semibold">Проект</div>
-        <Button onClick={async ()=>{
-          const last = columns.length ? columns[columns.length - 1] : null
-          const pos = (last?.position ?? 0) + 1
-          await createColumn(projectId, 'Новая колонка', pos)
-        }}>Добавить колонку</Button>
-      </div>
-      <DndContext sensors={sensors} onDragEnd={onDragEnd}>
-        <div className="flex gap-3 overflow-auto">
-          {columns.map((c)=>(
-            <ColumnView key={c.id} column={c} tasks={(tasksByColumn[c.id]||[])} />
-          ))}
-        </div>
-      </DndContext>
+      <Tabs
+        tabs={[
+          {
+            value: 'board',
+            label: 'Доска',
+            content: (
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-2xl font-semibold">Проект</div>
+                  <Button onClick={async ()=>{
+                    const last = columns.length ? columns[columns.length - 1] : null
+                    const pos = (last?.position ?? 0) + 1
+                    await createColumn(projectId, 'Новая колонка', pos)
+                  }}>Добавить колонку</Button>
+                </div>
+                <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+                  <div className="flex gap-3 overflow-auto">
+                    {columns.map((c)=>(
+                      <ColumnView key={c.id} column={c} tasks={(tasksByColumn[c.id]||[])} />
+                    ))}
+                  </div>
+                </DndContext>
+              </div>
+            )
+          },
+          {
+            value: 'chat',
+            label: 'Чат',
+            content: (
+              <div className="space-y-2">
+                <div className="h-80 overflow-auto rounded border p-2 bg-card">
+                  {chat.map((m:any)=> (
+                    <div key={m.id} className="text-sm mb-1"><span className="text-muted-foreground">{new Date(m.created_at).toLocaleTimeString()}:</span> {m.content}</div>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input className="flex-1 h-10 rounded-md border px-3" value={chatText} onChange={(e)=>setChatText(e.target.value)} placeholder="Сообщение" />
+                  <Button onClick={async ()=>{
+                    if (!chatText.trim()) return
+                    await sendMessage(projectId, chatText.trim())
+                    setChatText('')
+                  }}>Отправить</Button>
+                </div>
+              </div>
+            )
+          }
+        ]}
+      />
+
+      {activeTask && (
+        <TaskModal open={!!activeTask} onOpenChange={(o)=>{ if (!o) setActiveTask(null) }} taskId={activeTask.id} title={activeTask.title} />
+      )}
     </div>
   )
 }
